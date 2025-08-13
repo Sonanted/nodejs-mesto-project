@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 
 import BadRequestError from '../errors/BadRequestError';
 import NotFoundError from '../errors/NotFoundError';
+import ForbiddenError from '../errors/ForbiddenError';
 import Card from '../models/card';
 
 export const getCards = async (_req: Request, res: Response, next: NextFunction) => {
@@ -23,18 +24,19 @@ export const createCard = async (req: Request, res: Response, next: NextFunction
     });
     res.status(201).send(card);
   } catch (err) {
-    if (err instanceof Error && err.name === 'ValidationError') {
-      next(new BadRequestError('Некорректные данные для создания карточки'));
-    }
     next(err);
   }
 };
 
 export const deleteCardById = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await Card.findByIdAndDelete(req.params.cardId).orFail(
+    const card = await Card.findById(req.params.cardId).orFail(
       new NotFoundError('Карточка с таким id не найдена')
     );
+    if (card.owner.toString() !== req.user?._id) {
+      throw new ForbiddenError('Нельзя удалить чужую карточку');
+    }
+    card.delete();
     res.status(204).send();
   } catch (err) {
     if (err instanceof Error && err.name === 'CastError') {
@@ -58,9 +60,6 @@ export const addCardLike = async (req: Request, res: Response, next: NextFunctio
       if (err.name === 'CastError') {
         next(new BadRequestError('Некорректный _id пользователя'));
       }
-      if (err.name === 'ValidationError') {
-        next(new BadRequestError('Некорректный данные для постановки лайка'));
-      }
     } else {
       next(err);
     }
@@ -79,9 +78,6 @@ export const removeCardLike = async (req: Request, res: Response, next: NextFunc
     if (err instanceof Error) {
       if (err.name === 'CastError') {
         next(new BadRequestError('Некорректный _id пользователя'));
-      }
-      if (err.name === 'ValidationError') {
-        next(new BadRequestError('Некорректный данные для снятия лайка'));
       }
     } else {
       next(err);

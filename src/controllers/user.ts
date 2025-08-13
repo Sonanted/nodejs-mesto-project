@@ -1,9 +1,39 @@
 import { NextFunction, Request, Response } from 'express';
-import { Error } from 'mongoose';
+import { Error, mongo } from 'mongoose';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
+import UnauthorizedError from '../errors/UnauthorizedError';
 import BadRequestError from '../errors/BadRequestError';
 import NotFoundError from '../errors/NotFoundError';
+import ConflictError from '../errors/ConfilctError';
 import User from '../models/user';
+import { SECRET_KEY } from '../constants';
+
+export const login = async (req: Request, res: Response, next: NextFunction) => {
+  const { email, password } = req.body;
+  try {
+    const user = await User.findOne({ email })
+      .select('+password')
+      .orFail(new UnauthorizedError('Неправильные почта или пароль'));
+    const matched = await bcrypt.compare(password, user.password);
+    if (!matched) {
+      throw new UnauthorizedError('Неправильные почта или пароль');
+    }
+    const token = jwt.sign({ _id: user._id }, SECRET_KEY, {
+      expiresIn: '7d',
+    });
+    res
+      .cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+      })
+      .send('Authorized');
+  } catch (err) {
+    next(err);
+  }
+};
 
 export const getUsers = async (_req: Request, res: Response, next: NextFunction) => {
   try {
@@ -29,18 +59,34 @@ export const getUserById = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
-export const createUser = async (req: Request, res: Response, next: NextFunction) => {
-  const { name, about, avatar } = req.body;
+export const getActiveUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const user = await User.create({
+    const userId = req.user?._id;
+    if (!userId) {
+      throw new UnauthorizedError('Необходима авторизация');
+    }
+    const user = await User.findById(userId).orFail(new NotFoundError('Пользователь не найден'));
+    res.send(user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createUser = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, password, name, about, avatar } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await User.create({
+      email,
+      password: hashedPassword,
       name,
       about,
       avatar,
     });
-    res.status(201).send(user);
+    res.status(201).send(await User.find({ email }));
   } catch (err) {
-    if (err instanceof Error && err.name === 'ValidationError') {
-      next(new BadRequestError('Некорректные данные для создания пользователя'));
+    if (err instanceof mongo.MongoServerError && err.code === 11000) {
+      next(new ConflictError('Пользователь с таким email уже существует'));
     } else {
       next(err);
     }
@@ -57,13 +103,8 @@ export const patchUser = async (req: Request, res: Response, next: NextFunction)
     ).orFail(new NotFoundError('Пользователь с таким id не найден'));
     res.send(user);
   } catch (err) {
-    if (err instanceof Error) {
-      if (err.name === 'CastError') {
-        next(new BadRequestError('Некорректный _id пользователя'));
-      }
-      if (err.name === 'ValidationError') {
-        next(new BadRequestError('Некорректные данные для обновления пользователя'));
-      }
+    if (err instanceof Error && err.name === 'CastError') {
+      next(new BadRequestError('Некорректный _id пользователя'));
     } else {
       next(err);
     }
@@ -75,17 +116,12 @@ export const patchUserAvatar = async (req: Request, res: Response, next: NextFun
     const user = await User.findByIdAndUpdate(
       req.user?._id,
       { avatar: req.body.avatar },
-      { new: true }
+      { new: true, runValidators: true }
     ).orFail(new NotFoundError('Пользователь с таким id не найден'));
     res.send(user);
   } catch (err) {
-    if (err instanceof Error) {
-      if (err.name === 'CastError') {
-        next(new BadRequestError('Некорректный _id пользователя'));
-      }
-      if (err.name === 'ValidationError') {
-        next(new BadRequestError('Некорректный аватар для создания пользователя'));
-      }
+    if (err instanceof Error && err.name === 'CastError') {
+      next(new BadRequestError('Некорректный _id пользователя'));
     } else {
       next(err);
     }

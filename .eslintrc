@@ -40,14 +40,7 @@
           ]
         }
       ],
-      "no-unused-vars": [
-        "error",
-        {
-          "allow": [
-            "Request"
-          ]
-        }
-      ],
+      "no-unused-vars": "off",
       "import/extensions": [
           "error",
           "ignorePackages",
