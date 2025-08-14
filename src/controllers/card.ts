@@ -56,10 +56,8 @@ export const addCardLike = async (req: Request, res: Response, next: NextFunctio
     ).orFail(new NotFoundError('Карточка с таким id не найдена'));
     res.send(card);
   } catch (err) {
-    if (err instanceof Error) {
-      if (err.name === 'CastError') {
-        next(new BadRequestError('Некорректный _id пользователя'));
-      }
+    if (err instanceof Error && err.name === 'CastError') {
+      next(new BadRequestError('Некорректный _id пользователя'));
     } else {
       next(err);
     }
@@ -75,10 +73,8 @@ export const removeCardLike = async (req: Request, res: Response, next: NextFunc
     ).orFail(new NotFoundError('Карточка с таким id не найдена'));
     res.send(card);
   } catch (err) {
-    if (err instanceof Error) {
-      if (err.name === 'CastError') {
-        next(new BadRequestError('Некорректный _id пользователя'));
-      }
+    if (err instanceof Error && err.name === 'CastError') {
+      next(new BadRequestError('Некорректный _id пользователя'));
     } else {
       next(err);
     }
